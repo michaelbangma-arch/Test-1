@@ -1,0 +1,346 @@
+HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Exoplanet Spectroscopy Simulator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f1f5f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 5px; color: #38bdf8; }
+        .subtitle { color: #94a3b8; margin-top: 0; margin-bottom: 25px; max-width: 700px; text-align: center;}
+        
+        #sim-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        #visual-pane {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        #control-pane {
+            flex: 1;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+        }
+
+        .canvas-box {
+            background: #020617;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            padding: 10px;
+            position: relative;
+        }
+
+        canvas { display: block; border-radius: 4px; width: 100%;}
+        
+        .label-overlay {
+            position: absolute;
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* Controls Styling */
+        h3 { margin-top: 0; color: #e2e8f0; border-bottom: 2px solid #38bdf8; padding-bottom: 8px; }
+        .control-group { margin-bottom: 20px; }
+        .gas-option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .gas-option:hover { background: #334155; }
+        .gas-option input { margin-right: 12px; transform: scale(1.2); cursor: pointer;}
+        .gas-label { font-weight: 600; flex-grow: 1; }
+        .gas-color { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-left: 10px; border: 1px solid #94a3b8;}
+
+        #reset-btn {
+            width: 100%;
+            background-color: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            transition: background 0.2s;
+        }
+        #reset-btn:hover { background-color: #dc2626; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Transit Spectroscopy Simulator</h1>
+    <p class="subtitle">As starlight passes through an exoplanet's atmosphere, specific gasses absorb characteristic wavelengths (colors), creating unique 'fingerprints' or dark absorption lines in the observed spectrum.</p>
+
+    <div id="sim-container">
+        
+        <div id="visual-pane">
+            <!-- 1. The Physical Setup View -->
+            <div class="canvas-box">
+                <canvas id="setupCanvas" width="650" height="150"></canvas>
+            </div>
+
+            <!-- 2. The Resulting Spectrum (Graph) -->
+            <div class="canvas-box">
+                <div class="label-overlay" style="top: 15px; left: 15px;">Combined Atmosphere Spectrum (Relative Intensity)</div>
+                <canvas id="spectrumCanvas" width="650" height="280"></canvas>
+            </div>
+        </div>
+
+        <div id="control-pane">
+            <h3>Atmosphere Composition</h3>
+            <p style="font-size: 14px; color: #94a3b8; margin-bottom: 15px;">Select which gasses are present in the planet's atmosphere to see their combined effect.</p>
+            
+            <div class="control-group" id="gas-controls">
+                <!-- Gas options inserted here by JS -->
+            </div>
+
+            <button id="reset-btn">Clear Atmosphere</button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const setupCanvas = document.getElementById('setupCanvas');
+        const sCtx = setupCanvas.getContext('2d');
+        const spectrumCanvas = document.getElementById('spectrumCanvas');
+        const specCtx = spectrumCanvas.getContext('2d');
+        const resetBtn = document.getElementById('reset-btn');
+        const gasControls = document.getElementById('gas-controls');
+
+        // Define Gas Fingerprints (Normalized Wavelengths 0.0 to 1.0)
+        const gasData = [
+            { id: 'h2',    name: 'Hydrogen (H₂)', color: '#a78bfa', lines: [0.15, 0.42, 0.71, 0.92], strength: 0.8 },
+            { id: 'he',    name: 'Helium (He)',   color: '#fbbf24', lines: [0.08, 0.28, 0.55, 0.81], strength: 0.7 },
+            { id: 'ch4',   name: 'Methane (CH₄)', color: '#34d399', lines: [0.35, 0.38, 0.62, 0.65, 0.88], strength: 0.9 },
+            { id: 'h2o',   name: 'Water (H₂O)',   color: '#38bdf8', lines: [0.22, 0.48, 0.51, 0.75, 0.96], strength: 0.85 },
+            { id: 'co2',   name: 'Carbon Dioxide',color: '#f87171', lines: [0.31, 0.58, 0.68, 0.85], strength: 0.75 }
+        ];
+
+        // State
+        let activeGasses = [];
+
+        // --- Initialization ---
+        function init() {
+            // Generate Control UI
+            gasData.forEach(gas => {
+                const label = document.createElement('label');
+                label.className = 'gas-option';
+                label.innerHTML = `
+                    <input type="checkbox" value="${gas.id}" id="chk-${gas.id}">
+                    <span class="gas-label">${gas.name}</span>
+                    <span class="gas-color" style="background-color: ${gas.color}"></span>
+                `;
+                gasControls.appendChild(label);
+                
+                // Add event listener to checkbox
+                document.getElementById(`chk-${gas.id}`).addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        activeGasses.push(gas.id);
+                    } else {
+                        activeGasses = activeGasses.filter(id => id !== gas.id);
+                    }
+                    draw();
+                });
+            });
+
+            resetBtn.addEventListener('click', () => {
+                activeGasses = [];
+                document.querySelectorAll('#gas-controls input').forEach(input => input.checked = false);
+                draw();
+            });
+
+            draw(); // Initial draw
+        }
+
+        // --- Drawing Functions ---
+
+        function draw() {
+            drawSetup();
+            drawSpectrum();
+        }
+
+        function drawSetup() {
+            const w = setupCanvas.width;
+            const h = setupCanvas.height;
+            sCtx.fillStyle = '#020617';
+            sCtx.fillRect(0, 0, w, h);
+
+            // Draw Star (Source)
+            sCtx.fillStyle = '#fef3c7';
+            sCtx.beginPath();
+            sCtx.arc(-20, h/2, 100, 0, Math.PI*2);
+            sCtx.fill();
+
+            // Draw Planet
+            const planetX = w * 0.75;
+            const planetR = 30;
+            sCtx.fillStyle = '#1e293b';
+            sCtx.beginPath();
+            sCtx.arc(planetX, h/2, planetR, 0, Math.PI*2);
+            sCtx.fill();
+
+            // Draw Atmosphere (Glowing if active)
+            if (activeGasses.length > 0) {
+                // Blend colors of active gasses
+                sCtx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+                sCtx.lineWidth = 10;
+                sCtx.beginPath();
+                sCtx.arc(planetX, h/2, planetR + 5, 0, Math.PI*2);
+                sCtx.stroke();
+            }
+
+            // Draw Light Rays
+            sCtx.lineWidth = 2;
+            const rayCount = 8;
+            for (let i = 0; i < rayCount; i++) {
+                const y = (h/rayCount) * i + (h/rayCount/2);
+                const isTransiting = Math.abs(y - h/2) < (planetR + 10);
+                
+                if (isTransiting && activeGasses.length > 0) {
+                    // Affected Ray (Dashed/Dimmer)
+                    sCtx.strokeStyle = 'rgba(251, 191, 36, 0.4)';
+                    sCtx.setLineDash([5, 5]);
+                } else {
+                    // Pure Starlight
+                    sCtx.strokeStyle = 'rgba(251, 191, 36, 0.9)';
+                    sCtx.setLineDash([]);
+                }
+                sCtx.beginPath();
+                sCtx.moveTo(80, y);
+                sCtx.lineTo(w, y);
+                sCtx.stroke();
+            }
+            sCtx.setLineDash([]); // Reset
+
+            // Labels
+            sCtx.fillStyle = '#f1f5f9';
+            sCtx.font = 'bold 14px Segoe UI';
+            sCtx.fillText("Star Light Source", 90, 25);
+            sCtx.fillText("Exoplanet Transit", planetX - 55, h - 15);
+        }
+
+        function drawSpectrum() {
+            const w = spectrumCanvas.width;
+            const h = spectrumCanvas.height;
+            const graphT = 50; // Top margin
+            const graphB = 40; // Bottom margin
+            const graphL = 60; // Left margin
+            const graphR = 20; // Right margin
+            const gW = w - graphL - graphR;
+            const gH = h - graphT - graphB;
+
+            specCtx.fillStyle = '#020617';
+            specCtx.fillRect(0, 0, w, h);
+
+            // 1. Draw Background Axes/Grid
+            specCtx.strokeStyle = '#334155';
+            specCtx.lineWidth = 1;
+            specCtx.strokeRect(graphL, graphT, gW, gH);
+
+            specCtx.fillStyle = '#94a3b8';
+            specCtx.font = '12px Segoe UI';
+            specCtx.textAlign = 'right';
+            specCtx.fillText("1.0 (Pure)", graphL - 8, graphT + 5);
+            specCtx.fillText("0.5", graphL - 8, graphT + gH/2 + 5);
+            specCtx.fillText("0.0 (Dark)", graphL - 8, graphT + gH + 5);
+
+            specCtx.textAlign = 'center';
+            specCtx.fillText("400nm (Blue)", graphL, h - 20);
+            specCtx.fillText("550nm (Green)", graphL + gW/2, h - 20);
+            specCtx.fillText("700nm (Red)", graphL + gW, h - 20);
+            specCtx.fillText("Wavelength (Color)", graphL + gW/2, h - 5);
+
+
+            // 2. Generate and Draw the Observed Spectrum Line
+            specCtx.beginPath();
+            specCtx.lineWidth = 2.5;
+            
+            // Start at 1.0 (Full Intensity)
+            specCtx.moveTo(graphL, graphT); 
+            
+            let currentPath = [];
+
+            // Iterate across the spectrum, calculating intensity at every pixel
+            for (let x = 0; x <= gW; x++) {
+                const lambda = x / gW; // Normalized wavelength 0.0 to 1.0
+                let intensity = 1.0; // Start with full starlight
+
+                // Check active gasses
+                activeGasses.forEach(gasId => {
+                    const gas = gasData.find(g => g.id === gasId);
+                    // Check if lambda matches any absorption lines
+                    gas.lines.forEach(lineLambda => {
+                        const distance = Math.abs(lambda - lineLambda);
+                        const lineWidth = 0.015; // Width of the absorption dip
+
+                        if (distance < lineWidth) {
+                            // Calculate Gaussian-like dip
+                            const dip = Math.exp(-(distance * distance) / (2 * lineWidth * lineWidth / 4));
+                            intensity -= dip * gas.strength * 0.9; // Apply absorption
+                        }
+                    });
+                });
+
+                intensity = Math.max(0.05, intensity); // Clamp intensity (never pure black)
+                const y = graphT + (gH * (1 - intensity));
+                currentPath.push({x: graphL + x, y: y});
+            }
+
+            // Draw Gradient Underneath Path
+            const gradient = specCtx.createLinearGradient(graphL, 0, graphL + gW, 0);
+            gradient.addColorStop(0, '#7c3aed'); // Violet
+            gradient.addColorStop(0.2, '#2563eb'); // Blue
+            gradient.addColorStop(0.4, '#16a34a'); // Green
+            gradient.addColorStop(0.6, '#ca8a04'); // Yellow
+            gradient.addColorStop(0.8, '#ea580c'); // Orange
+            gradient.addColorStop(1, '#dc2626'); // Red
+            
+            specCtx.fillStyle = gradient;
+            specCtx.beginPath();
+            specCtx.moveTo(graphL, graphT + gH); // Bottom left
+            currentPath.forEach(p => specCtx.lineTo(p.x, p.y)); // Follow path
+            specCtx.lineTo(graphL + gW, graphT + gH); // Bottom right
+            specCtx.closePath();
+            specCtx.fill();
+
+
+            // Draw Path Outline (Highlighting the dips)
+            specCtx.strokeStyle = (activeGasses.length > 0) ? '#f1f5f9' : '#ca8a04';
+            specCtx.beginPath();
+            currentPath.forEach((p, i) => {
+                if (i===0) specCtx.moveTo(p.x, p.y);
+                else specCtx.lineTo(p.x, p.y);
+            });
+            specCtx.stroke();
+        }
+
+        // Run on load
+        init();
+    </script>
+</body>
+</html>
