@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Barycenter & Orbital Motion Simulation</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+    h2 { margin-bottom: 5px; }
+    p { color: #94a3b8; margin-top: 0; }
+    #canvas-container {
+      position: relative;
+      background: #020617;
+      border: 2px solid #334155;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    canvas { display: block; border-radius: 8px; }
+    .controls {
+      display: flex;
+      gap: 20px;
+      margin-top: 15px;
+      background: #1e293b;
+      padding: 15px 25px;
+      border-radius: 8px;
+      align-items: center;
+    }
+    label { font-weight: bold; font-size: 14px; }
+    input[type=range] { vertical-align: middle; }
+    button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background-color: #1d4ed8; }
+  </style>
+</head>
+<body>
+
+  <h2>Orbital Barycenter Simulation</h2>
+  <p>Both bodies orbit around their common center of mass (the red cross).</p>
+
+  <div id="canvas-container">
+    <canvas id="simCanvas" width="700" height="450"></canvas>
+  </div>
+
+  <div class="controls">
+    <div>
+      <label for="massSlider">Mass Ratio (Star : Planet): </label>
+      <input type="range" id="massSlider" min="1" max="20" value="5" step="0.5">
+      <span id="massVal" style="color: #38bdf8;">5 : 1</span>
+    </div>
+    <button id="toggleTrace">Clear Orbit Trails</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const massSlider = document.getElementById('massSlider');
+    const massVal = document.getElementById('massVal');
+    const toggleTraceBtn = document.getElementById('toggleTrace');
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const totalDistance = 180; // Distance between bodies
+    let angle = 0;
+
+    // Trail storage
+    let starTrails = [];
+    let planetTrails = [];
+
+    massSlider.addEventListener('input', (e) => {
+      massVal.textContent = `${e.target.value} : 1`;
+      clearTrails();
+    });
+
+    toggleTraceBtn.addEventListener('click', clearTrails);
+
+    function clearTrails() {
+      starTrails = [];
+      planetTrails = [];
+    }
+
+    function draw() {
+      // Clear background
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const m1 = parseFloat(massSlider.value); // Star mass
+      const m2 = 1; // Planet mass
+
+      // Distances from barycenter: r1 = d * (m2 / (m1 + m2)), r2 = d * (m1 / (m1 + m2))
+      const r1 = totalDistance * (m2 / (m1 + m2));
+      const r2 = totalDistance * (m1 / (m1 + m2));
+
+      // Calculate positions relative to Barycenter at (centerX, centerY)
+      const starX = centerX + r1 * Math.cos(angle);
+      const starY = centerY + r1 * Math.sin(angle);
+
+      const planetX = centerX - r2 * Math.cos(angle);
+      const planetY = centerY - r2 * Math.sin(angle);
+
+      // Save trails
+      starTrails.push({ x: starX, y: starY });
+      planetTrails.push({ x: planetX, y: planetY });
+
+      if (starTrails.length > 300) starTrails.shift();
+      if (planetTrails.length > 300) planetTrails.shift();
+
+      // Draw Orbit Trails
+      ctx.lineWidth = 2;
+      
+      // Star Trail
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.4)';
+      ctx.beginPath();
+      for (let i = 0; i < starTrails.length; i++) {
+        if (i === 0) ctx.moveTo(starTrails[i].x, starTrails[i].y);
+        else ctx.lineTo(starTrails[i].x, starTrails[i].y);
+      }
+      ctx.stroke();
+
+      // Planet Trail
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+      ctx.beginPath();
+      for (let i = 0; i < planetTrails.length; i++) {
+        if (i === 0) ctx.moveTo(planetTrails[i].x, planetTrails[i].y);
+        else ctx.lineTo(planetTrails[i].x, planetTrails[i].y);
+      }
+      ctx.stroke();
+
+      // Draw Connection Line
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(starX, starY);
+      ctx.lineTo(planetX, planetY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw Barycenter (Center of Mass)
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw Star
+      const starRadius = Math.max(12, Math.min(28, 10 + m1));
+      ctx.fillStyle = '#fde047';
+      ctx.shadowColor = '#fde047';
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      ctx.arc(starX, starY, starRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0; // reset blur
+
+      // Draw Planet
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowColor = '#38bdf8';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(planetX, planetY, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Labels
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '12px Arial';
+      ctx.fillText('Star', starX - 12, starY - starRadius - 6);
+      ctx.fillText('Planet', planetX - 16, planetY - 14);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillText('Barycenter', centerX - 26, centerY + 22);
+
+      // Update angle
+      angle += 0.02;
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  </script>
+</body>
+</html>
