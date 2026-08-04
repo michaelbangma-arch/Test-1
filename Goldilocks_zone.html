@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Habitable Zone & Orbital Period Simulator</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+    h2 { color: #38bdf8; margin-bottom: 5px; }
+    p.subtitle { color: #94a3b8; margin-top: 0; margin-bottom: 20px; text-align: center; max-width: 850px; }
+    
+    #container {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 100%;
+      max-width: 850px;
+    }
+
+    .canvas-box {
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px;
+      position: relative;
+    }
+
+    canvas { display: block; width: 100%; border-radius: 4px; }
+
+    .readout {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 12px 20px;
+      border-radius: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: space-around;
+      align-items: center;
+    }
+
+    .readout-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .readout-label { font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
+    .readout-val { font-size: 16px; font-weight: bold; color: #38bdf8; margin-top: 2px; }
+
+    .controls {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 15px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    label { font-size: 13px; font-weight: bold; color: #cbd5e1; }
+    input[type=range], select {
+      width: 170px;
+      padding: 6px;
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 4px;
+    }
+
+    .status-badge {
+      font-size: 13px;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    .state-ice { background: #0284c7; color: #ffffff; }
+    .state-liquid { background: #16a34a; color: #ffffff; }
+    .state-steam { background: #dc2626; color: #ffffff; }
+  </style>
+</head>
+<body>
+
+  <h2>Habitable Zone & Orbital Period Simulator</h2>
+  <p class="subtitle">
+    Observe how changing the <strong>Star Type</strong> shifts the Goldilocks Zone (green band), and how adjusting the <strong>Orbital Distance</strong> alters both the planet's temperature and its <strong>Orbital Period (Year Length)</strong> via Kepler's 3rd Law!
+  </p>
+
+  <div id="container">
+    
+    <!-- 1. Star & Orbit System View -->
+    <div class="canvas-box">
+      <canvas id="systemCanvas" width="830" height="250"></canvas>
+    </div>
+
+    <!-- 2. Combined Readout Panel -->
+    <div class="readout">
+      <div class="readout-item">
+        <span class="readout-label">Orbital Period (Year Length)</span>
+        <span id="periodVal" class="readout-val">365 Earth Days</span>
+      </div>
+      <div class="readout-item">
+        <span class="readout-label">Calculated Temperature</span>
+        <span id="tempVal" class="readout-val">15 °C</span>
+      </div>
+      <div class="readout-item">
+        <span class="readout-label">Water State</span>
+        <span id="stateBadge" class="status-badge state-liquid">LIQUID WATER (Habitable)</span>
+      </div>
+    </div>
+
+    <!-- 3. Control Panel -->
+    <div class="controls">
+      <!-- Star Type Selection -->
+      <div class="control-group">
+        <label for="starSelect">Star Type & Luminosity:</label>
+        <select id="starSelect">
+          <option value="red">M-Dwarf (Cool Red Star, 0.4 M☉)</option>
+          <option value="sun" selected>G-Type (Sun-like Star, 1.0 M☉)</option>
+          <option value="blue">A-Type (Hot Blue Star, 2.0 M☉)</option>
+        </select>
+      </div>
+
+      <!-- Distance Slider -->
+      <div class="control-group">
+        <label for="distSlider">Orbital Distance: <span id="distVal" style="color:#38bdf8;">1.00 AU</span></label>
+        <input type="range" id="distSlider" min="0.1" max="3.5" value="1.0" step="0.05">
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const sysCanvas = document.getElementById('systemCanvas');
+    const sCtx = sysCanvas.getContext('2d');
+
+    const starSelect = document.getElementById('starSelect');
+    const distSlider = document.getElementById('distSlider');
+    const distVal = document.getElementById('distVal');
+    const tempVal = document.getElementById('tempVal');
+    const periodVal = document.getElementById('periodVal');
+    const stateBadge = document.getElementById('stateBadge');
+
+    // Star Properties (Mass in Solar Masses M☉, Luminosity relative to Sun L☉)
+    const stars = {
+      red:  { name: "Red Dwarf", color: "#ef4444", radius: 28, mass: 0.4, luminosity: 0.08, hzInner: 0.2,  hzOuter: 0.48 },
+      sun:  { name: "Sun-like",  color: "#fde047", radius: 45, mass: 1.0, luminosity: 1.0,  hzInner: 0.85, hzOuter: 1.5 },
+      blue: { name: "Blue Star", color: "#38bdf8", radius: 60, mass: 2.0, luminosity: 6.0,  hzInner: 2.1,  hzOuter: 3.3 }
+    };
+
+    let currentStar = stars.sun;
+    let distance = parseFloat(distSlider.value); // In Astronomical Units (AU)
+    let planetAngle = 0;
+
+    starSelect.addEventListener('change', (e) => {
+      currentStar = stars[e.target.value];
+      updateReadouts();
+    });
+
+    distSlider.addEventListener('input', (e) => {
+      distance = parseFloat(e.target.value);
+      distVal.textContent = `${distance.toFixed(2)} AU`;
+      updateReadouts();
+    });
+
+    // Calculate Temperature in Celsius
+    function calculateTemperature() {
+      const baseTempK = 288 * Math.pow(currentStar.luminosity, 0.25) / Math.sqrt(distance);
+      return Math.round(baseTempK - 273.15);
+    }
+
+    // Calculate Orbital Period in Earth Days via Kepler's 3rd Law: P = sqrt(a^3 / M)
+    function calculatePeriodDays() {
+      const periodYears = Math.sqrt(Math.pow(distance, 3) / currentStar.mass);
+      const days = periodYears * 365.25;
+      return days;
+    }
+
+    function updateReadouts() {
+      // Temperature
+      const tempC = calculateTemperature();
+      tempVal.textContent = `${tempC} °C`;
+
+      if (tempC < 0) {
+        stateBadge.textContent = "FROZEN ICE (Too Cold)";
+        stateBadge.className = "status-badge state-ice";
+      } else if (tempC <= 100) {
+        stateBadge.textContent = "LIQUID WATER (Habitable Zone!)";
+        stateBadge.className = "status-badge state-liquid";
+      } else {
+        stateBadge.textContent = "BOILING STEAM (Too Hot)";
+        stateBadge.className = "status-badge state-steam";
+      }
+
+      // Orbital Period Display
+      const days = calculatePeriodDays();
+      if (days < 365) {
+        periodVal.textContent = `${Math.round(days)} Earth Days`;
+      } else {
+        const years = (days / 365.25).toFixed(2);
+        periodVal.textContent = `${Math.round(days)} Earth Days (${years} Years)`;
+      }
+    }
+
+    function animate() {
+      const w = sysCanvas.width;
+      const h = sysCanvas.height;
+      const starX = 80;
+      const starY = h / 2;
+
+      // Clear background
+      sCtx.fillStyle = '#020617';
+      sCtx.fillRect(0, 0, w, h);
+
+      // Scale AU to Pixels (1 AU = 180px)
+      const scale = 180;
+      const innerPx = starX + currentStar.hzInner * scale;
+      const outerPx = starX + currentStar.hzOuter * scale;
+
+      // --- 1. Draw Goldilocks Zone Band ---
+      // Inner Hot Zone
+      sCtx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+      sCtx.fillRect(starX, 0, innerPx - starX, h);
+
+      // Habitable Zone (Green Band moves with star type!)
+      sCtx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+      sCtx.fillRect(innerPx, 0, outerPx - innerPx, h);
+
+      // Outer Cold Zone
+      sCtx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      sCtx.fillRect(outerPx, 0, w - outerPx, h);
+
+      // Zone Boundary Lines
+      sCtx.strokeStyle = 'rgba(34, 197, 94, 0.6)';
+      sCtx.lineWidth = 1.5;
+      sCtx.setLineDash([4, 4]);
+      sCtx.beginPath();
+      sCtx.moveTo(innerPx, 0); sCtx.lineTo(innerPx, h);
+      sCtx.moveTo(outerPx, 0); sCtx.lineTo(outerPx, h);
+      sCtx.stroke();
+      sCtx.setLineDash([]);
+
+      // Zone Labels
+      sCtx.font = 'bold 11px Segoe UI';
+      sCtx.fillStyle = '#f87171';
+      sCtx.fillText("TOO HOT", starX + 15, 25);
+      sCtx.fillStyle = '#4ade80';
+      sCtx.fillText("GOLDILOCKS ZONE (LIQUID WATER)", innerPx + 10, 25);
+      sCtx.fillStyle = '#38bdf8';
+      sCtx.fillText("TOO COLD", outerPx + 15, 25);
+
+      // --- 2. Draw Orbit Ellipse ---
+      const orbitX = distance * scale;
+      sCtx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+      sCtx.lineWidth = 1;
+      sCtx.beginPath();
+      sCtx.ellipse(starX, starY, orbitX, orbitX * 0.25, 0, 0, Math.PI * 2);
+      sCtx.stroke();
+
+      // --- 3. Draw Star ---
+      sCtx.fillStyle = currentStar.color;
+      sCtx.shadowColor = currentStar.color;
+      sCtx.shadowBlur = 20;
+      sCtx.beginPath();
+      sCtx.arc(starX, starY, currentStar.radius, 0, Math.PI * 2);
+      sCtx.fill();
+      sCtx.shadowBlur = 0;
+
+      // --- 4. Draw Planet & Animate Orbital Motion ---
+      // Speed scales inversely with calculated period so distant orbits move slower visually
+      const periodDays = calculatePeriodDays();
+      const visualSpeed = 10 / Math.sqrt(periodDays);
+      
+      planetAngle += visualSpeed;
+      if (planetAngle > Math.PI * 2) planetAngle -= Math.PI * 2;
+
+      const px = starX + orbitX * Math.cos(planetAngle);
+      const py = starY + (orbitX * 0.25) * Math.sin(planetAngle);
+
+      // Planet Color based on temperature state
+      const tempC = calculateTemperature();
+      let planetColor = '#38bdf8'; // Liquid water (Earth blue)
+      if (tempC < 0) planetColor = '#e0f2fe'; // Ice (Pale blue)
+      else if (tempC > 100) planetColor = '#f97316'; // Scorched (Orange)
+
+      sCtx.fillStyle = planetColor;
+      sCtx.shadowColor = planetColor;
+      sCtx.shadowBlur = 8;
+      sCtx.beginPath();
+      sCtx.arc(px, py, 9, 0, Math.PI * 2);
+      sCtx.fill();
+      sCtx.shadowBlur = 0;
+
+      // Label Planet
+      sCtx.fillStyle = '#f8fafc';
+      sCtx.font = '12px Segoe UI';
+      sCtx.fillText("Exoplanet", px - 24, py - 14);
+
+      requestAnimationFrame(animate);
+    }
+
+    updateReadouts();
+    animate();
+  </script>
+</body>
+</html>
