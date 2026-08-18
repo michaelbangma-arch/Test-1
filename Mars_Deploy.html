@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mars Rocket Launch Window Simulator</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background-color: #0b0e14;
+      color: #e0e6ed;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0 0 10px 0;
+      color: #4da6ff;
+    }
+
+    .instructions {
+      max-width: 600px;
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      color: #a0aec0;
+    }
+
+    canvas {
+      background-color: #05070a;
+      border: 2px solid #1a202c;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    button {
+      background-color: #3182ce;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #2b6cb0;
+    }
+
+    button:disabled {
+      background-color: #4a5568;
+      cursor: not-allowed;
+    }
+
+    button#resetBtn {
+      background-color: #e53e3e;
+    }
+
+    button#resetBtn:hover {
+      background-color: #c53030;
+    }
+
+    #status {
+      font-size: 1.1rem;
+      font-weight: bold;
+      min-height: 1.5em;
+    }
+
+    .success { color: #48bb78; }
+    .miss { color: #f56565; }
+    .in-flight { color: #ecc94b; }
+  </style>
+</head>
+<body>
+
+  <h1>Mars Launch Window Simulator</h1>
+  <div class="instructions">
+    Earth orbits the Sun faster than Mars. Because the rocket takes time to travel across the solar system, you must launch <strong>before</strong> Mars reaches the rendezvous point. Click <strong>LAUNCH</strong> when you think the planets are aligned correctly!
+  </div>
+
+  <canvas id="orbitCanvas" width="600" height="600"></canvas>
+
+  <div class="controls">
+    <button id="launchBtn">LAUNCH ROCKET</button>
+    <button id="resetBtn">RESET</button>
+  </div>
+
+  <p id="status"></p>
+
+  <script>
+    const canvas = document.getElementById('orbitCanvas');
+    const ctx = canvas.getContext('2d');
+    const launchBtn = document.getElementById('launchBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusEl = document.getElementById('status');
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+
+    // Orbital parameters (scaled for visual clarity)
+    const rEarth = 120;
+    const rMars = 210;
+    
+    // Orbital speeds (Earth completes ~1.88 orbits for every 1 Mars orbit)
+    const speedEarth = 0.015;
+    const speedMars = 0.008;
+
+    let angleEarth = 0;
+    let angleMars = Math.PI / 2; // Start Mars at a different angle
+
+    // Rocket State
+    let rocket = null;
+    let isLaunching = false;
+
+    function drawSystem() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Draw Sun
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 20, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffcc00';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#ffcc00';
+      ctx.fill();
+      ctx.shadowBlur = 0; // Reset shadow
+
+      // 2. Draw Orbit Paths
+      ctx.strokeStyle = '#2d3748';
+      ctx.lineWidth = 1;
+      
+      // Earth Orbit
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, rEarth, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Mars Orbit
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, rMars, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 3. Update & Draw Earth
+      if (!isLaunching) {
+        angleEarth += speedEarth;
+      }
+      const xEarth = centerX + rEarth * Math.cos(angleEarth);
+      const yEarth = centerY + rEarth * Math.sin(angleEarth);
+
+      ctx.beginPath();
+      ctx.arc(xEarth, yEarth, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#4299e1';
+      ctx.fill();
+
+      // 4. Update & Draw Mars
+      angleMars += speedMars;
+      const xMars = centerX + rMars * Math.cos(angleMars);
+      const yMars = centerY + rMars * Math.sin(angleMars);
+
+      ctx.beginPath();
+      ctx.arc(xMars, yMars, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ed8936';
+      ctx.fill();
+
+      // 5. Handle Rocket Trajectory
+      if (rocket) {
+        // Progress rocket along elliptical transfer path
+        rocket.progress += rocket.speed;
+
+        // Current distance from sun expands from Earth orbit to Mars orbit
+        const currentR = rEarth + (rMars - rEarth) * rocket.progress;
+        // Rocket sweeps around the sun as it travels outwards
+        const currentAngle = rocket.startAngle + (rocket.angleSweep * rocket.progress);
+
+        const xRocket = centerX + currentR * Math.cos(currentAngle);
+        const yRocket = centerY + currentR * Math.sin(currentAngle);
+
+        // Draw Rocket Trail
+        ctx.beginPath();
+        ctx.arc(xRocket, yRocket, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        // Check if rocket reaches Mars orbit
+        if (rocket.progress >= 1) {
+          // Calculate distance between rocket and Mars
+          const dist = Math.hypot(xRocket - xMars, yRocket - yMars);
+
+          if (dist < 18) { // Hit threshold
+            statusEl.textContent = "SUCCESS! Perfect intercept with Mars!";
+            statusEl.className = "success";
+          } else {
+            statusEl.textContent = "MISSED! Mars was not at the intercept point.";
+            statusEl.className = "miss";
+          }
+          
+          rocket = null; // Stop updating rocket
+        }
+      }
+    }
+
+    function animate() {
+      drawSystem();
+      requestAnimationFrame(animate);
+    }
+
+    launchBtn.addEventListener('click', () => {
+      if (isLaunching) return;
+
+      isLaunching = true;
+      launchBtn.disabled = true;
+      statusEl.textContent = "Rocket in transit...";
+      statusEl.className = "in-flight";
+
+      // Launch rocket from Earth's current position
+      // In a Hohmann transfer, the craft travels roughly 180 degrees around the sun
+      rocket = {
+        startAngle: angleEarth,
+        angleSweep: Math.PI * 0.85, // Curving path around the Sun
+        progress: 0,
+        speed: 0.006 // Speed of transit
+      };
+    });
+
+    resetBtn.addEventListener('click', () => {
+      isLaunching = false;
+      rocket = null;
+      launchBtn.disabled = false;
+      statusEl.textContent = "";
+      
+      // Reset positions to initial state
+      angleEarth = 0;
+      angleMars = Math.PI / 2;
+    });
+
+    // Start animation loop
+    animate();
+  </script>
+</body>
+</html>
